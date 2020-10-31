@@ -1,0 +1,79 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: "aws static site sample"
+Resources:
+  S3BucketLogs:
+    Type: AWS::S3::Bucket
+    Properties:
+      AccessControl: LogDeliveryWrite
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+  S3BucketWebStatic:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LoggingConfiguration:
+        DestinationBucketName: !Ref S3BucketLogs
+        LogFilePrefix: 'origin/'
+  BucketPolicyWebStatic:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref S3BucketWebStatic
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Action:
+              - s3:GetObject
+            Effect: Allow
+            Resource: !Sub '${S3BucketWebStatic.Arn}/*'
+            Principal:
+              CanonicalUser: !GetAtt CloudFrontOriginAccessIdentity.S3CanonicalUserId
+  CloudFrontOriginAccessIdentity:
+    Type: AWS::CloudFront::CloudFrontOriginAccessIdentity
+    Properties:
+      CloudFrontOriginAccessIdentityConfig:
+        Comment: "CloudFront OAI for Static Web Site"
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        DefaultCacheBehavior:
+          Compress: true
+          DefaultTTL: 86400
+          ForwardedValues:
+            QueryString: true
+          MaxTTL: 31536000
+          TargetOriginId: 'WebStatic-S3'
+          ViewerProtocolPolicy: 'redirect-to-https'
+        Enabled: true
+        HttpVersion: 'http2'
+        DefaultRootObject: 'index.html'
+        IPV6Enabled: true
+        Logging:
+          Bucket: !GetAtt S3BucketLogs.DomainName
+          IncludeCookies: false
+          Prefix: 'cdn/'
+        Origins:
+          - DomainName: !Join ["", [!Ref S3BucketWebStatic, !Sub ".s3-${AWS::Region}.amazonaws.com"]]
+            Id: 'WebStatic-S3'
+            S3OriginConfig:
+              OriginAccessIdentity:
+                !Join ['', ['origin-access-identity/cloudfront/', !Ref CloudFrontOriginAccessIdentity]]
+        PriceClass: 'PriceClass_All'
+        ViewerCertificate:
+          CloudFrontDefaultCertificate: true
+Outputs:
+  S3BucketLogsName:
+    Description: "S3 Bucket for keeping access logs."
+    Value: !Ref S3BucketLogs
+  S3BucketWebStaticName:
+    Description: "S3 Bucket for deploying static site."
+    Value: !Ref S3BucketWebStatic
+  CloudFrontDomainName:
+    Description: "CloudFront DomainName."
+    Value: !GetAtt  CloudFrontDistribution.DomainName
+        
